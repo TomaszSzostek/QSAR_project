@@ -8,8 +8,8 @@
 
 ## Table of Contents
 
-1. [Overview](#-overview)
-2. [Key Features](#-key-features)
+1. [Overview](#overview)
+2. [Key Features](#key-features)
 3. [Getting Started](#gettingstarted)
 4. [Project Structure](#projectstructure)
 5. [Pipeline Steps](#pipelinesteps)
