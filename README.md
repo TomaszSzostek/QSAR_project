@@ -7,12 +7,11 @@
 ---
 
 ## Table of Contents
-
-1. [Overview](#-overview)
-2. [Key Features](#-key-features)
-3. [Getting Started](#gettingstarted)
-4. [Project Structure](#projectstructure)
-5. [Pipeline Steps](#pipelinesteps)
+1. [Overview](#overview)
+2. [Key Features](#key-features)
+3. [Getting Started](#getting-started)
+4. [Project Structure](#project-structure)
+5. [Pipeline Steps](#pipeline-steps)
 6. [Configuration](#configuration)
 7. [Results](#results)
 8. [License](#license)
@@ -120,35 +119,11 @@ REFIDD/
 ### ⚡ Quick one-liner
 
 ```bash
-conda activate fraggen-100
-python Deskryptory/Data_preparation.py && \
-python results/Evaluation_qsar_model/qsar_train.py && \
-python defragmentation.py && \
-python new_compounds.py
+  conda activate qsar-env
+  python Deskryptory/Data_preparation.py && \
+  python results/Evaluation_qsar_model/qsar_train.py && \
+  python defragmentation.py && \
+  python new_compounds.py
 ```
----
-
-## Results
-
-Key outputs (under `results/`):
-
-* `roc.png`, `pr.png` – performance metrics
-* `shap_beeswarm.png`, `shap_bar.png` – descriptor impact
-* `first_10_hits.png`, `top100_hits.tsv` – generated molecules
-
----
-
-## License
-
-Research‑only. For commercial use contact the author.
-
----
-
-## Contact
-
-**Tomasz Szostek** – PhD Candidate, University of Milano‑Bicocca
-Email: [tomasz.szostek@example.com](mailto:tomasz.szostek@example.com)
-
----
 
 *Happy modelling!*
