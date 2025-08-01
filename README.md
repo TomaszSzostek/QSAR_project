@@ -7,16 +7,15 @@
 ---
 
 ## Table of Contents
-
-1. [Overview](#-overview)
-2. [Key Features](#-key-features)
-3. [Getting Started](#gettingstarted)
-4. [Project Structure](#projectstructure)
-5. [Pipeline Steps](#pipelinesteps)
-6. [Configuration](#configuration)
-7. [Results](#results)
-8. [License](#license)
-9. [Contact](#contact)
+1. [📝 Overview](#overview)
+2. [✨ Key Features](#key-features)
+3. [🚀 Getting Started](#getting-started)
+4. [📂 Project Structure](#project-structure)
+5. [🛠️ Pipeline Steps](#pipeline-steps)
+6. [⚙️ Configuration](#configuration)
+7. [📊 Results](#results)
+8. [🪪 License](#license)
+9. [📫 Contact](#contact)
 
 ---
 > [!NOTE]
@@ -27,7 +26,7 @@
 > * use ChEMBL’s substructure search to export all compounds that contain your pharmacophore of choice and feed them straight into the workflow.
 > * pipeline allows you to add `/my_compounds.csv` with molecules coming from your own resources.
 
-## 📋 Overview
+## 📝 Overview
 
 Design and evaluate new anticancer molecules with an **explainable Random Forest QSAR** model.  The workflow covers:
 
@@ -52,7 +51,7 @@ chooses 100 the best hits for further analysis.
 
 ---
 
-## 🔑 Key Features — one-glance summary
+## ✨ Key Features
 
 | Stage / Module      | Highlights (essentials)                                                                  |
 |---------------------|------------------------------------------------------------------------------------------|
@@ -67,7 +66,7 @@ chooses 100 the best hits for further analysis.
 
 ---
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
@@ -83,7 +82,7 @@ chooses 100 the best hits for further analysis.
 
 ---
 
-## Project Structure
+## 📂 Project Structure
 
 ```text
 REFIDD/
@@ -102,9 +101,7 @@ REFIDD/
 
 ---
 
-## 🛠️ How to Run the Pipeline — step by step
-
-
+## 🛠️ Pipeline Steps
 
 | Step | Goal | Command (copy ⇣) | Key Outputs |
 |------|------|------------------|-------------|
@@ -117,38 +114,14 @@ REFIDD/
 
 ---
 
-### ⚡ Quick one-liner
+## ⚙️ Configuration
 
 ```bash
-conda activate fraggen-100
-python Deskryptory/Data_preparation.py && \
-python results/Evaluation_qsar_model/qsar_train.py && \
-python defragmentation.py && \
-python new_compounds.py
+  conda activate qsar-env
+  python Deskryptory/Data_preparation.py && \
+  python results/Evaluation_qsar_model/qsar_train.py && \
+  python defragmentation.py && \
+  python new_compounds.py
 ```
----
-
-## Results
-
-Key outputs (under `results/`):
-
-* `roc.png`, `pr.png` – performance metrics
-* `shap_beeswarm.png`, `shap_bar.png` – descriptor impact
-* `first_10_hits.png`, `top100_hits.tsv` – generated molecules
-
----
-
-## License
-
-Research‑only. For commercial use contact the author.
-
----
-
-## Contact
-
-**Tomasz Szostek** – PhD Candidate, University of Milano‑Bicocca
-Email: [tomasz.szostek@example.com](mailto:tomasz.szostek@example.com)
-
----
 
 *Happy modelling!*
