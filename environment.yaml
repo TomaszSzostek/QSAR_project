@@ -1,0 +1,25 @@
+name: qsar-env
+channels:
+  - conda-forge          # unified channel, includes RDKit build
+  - rdkit                # kept for redundancy (mirrors conda-forge build)
+dependencies:
+  # ── core ───────────────────────────────────────────
+  - python =3.10
+  - rdkit =2023.09.5      # cheminformatics backbone
+  - mordred               # 2D descriptor generator
+  - scikit-learn >=1.4    # ML algorithms (RandomForest, PLS, etc.)
+  - imbalanced-learn      # BalancedRandomForest
+  - shap >=0.45           # model interpretability
+  - boruta_py             # Boruta feature selection
+  - joblib                # model persistence
+  # ── data / viz ─────────────────────────────────────
+  - numpy >=1.26
+  - pandas >=2.2
+  - matplotlib >=3.8
+  - seaborn >=0.13
+  - tqdm                  # nice progress bars
+  # ── optional extras ────────────────────────────────
+  - jupyterlab            # interactive notebooks
+  - pip                   # fallback for PyPI-only packages
+  - pip:
+      - py3Dmol>=2.0.2     # 3D molecular viewer in notebooks

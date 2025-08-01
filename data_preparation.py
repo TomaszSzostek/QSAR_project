@@ -20,7 +20,7 @@ PAGE_LIMIT  = 1000
 THRESHOLD_NM = 1_0000
 
 CUSTOM_DATASET_PATH = (
-    "/Users/tomaszszostek/PycharmProjects/Deskryptory/"
+    "/Users/tomaszszostek/PycharmProjects/REFIDD/"
     "data_sets/data/raw/my_compounds.csv"
 )
 
@@ -169,7 +169,7 @@ def drop_tautomer_duplicates(df: pd.DataFrame) -> pd.DataFrame:
 def create_final_dataset():
     raw_csv   = f"{RAW_DIR}/A549_activities.csv"
     final_csv = f"{PROCESSED_DIR}/final_dataset.csv"
-    thia_csv  = "data_sets/data/raw/baza_4-thiazolidinones.csv"
+    thia_csv  = "data_sets/data/raw/your_molecules.csv"
 
 
     if final_csv and Path(final_csv).exists() and not REBUILD_DATASET:
