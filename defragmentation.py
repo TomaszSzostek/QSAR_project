@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Mapping
 
 import numpy as np
 import pandas as pd
@@ -284,12 +284,14 @@ def train_and_eval_models(X, y, out_dir: Path):
 # 6. Entry point
 # ───────────────────────────────────────────────────────────────
 
-def main():
-    CSV_PATH = "data_sets/data/processed/final_dataset.csv"
-    OUT_ROOT = Path("results/Defragmentation_results")
-    OUT_ROOT.mkdir(exist_ok=True)
+def defragmenttion(cfg: Mapping, log):
+    paths = cfg["Paths"]
 
-    df = load_dataset(CSV_PATH)
+    final_csv = "data/processed/final_dataset.csv"
+    fragments = Path(paths["fragments"])
+    fragments.mkdir(exist_ok=True)
+
+    df = load_dataset(final_csv)
     y = df.activity_flag.map({"inactive": 0, "active": 1}).astype(int)
     smiles_df = df[["canonical_smiles"]].rename(columns={"canonical_smiles": "SMILES"})
 
@@ -297,11 +299,7 @@ def main():
     X_frag, cols = generate_fragment_matrix_brics(smiles_df, min_occ=1)
     print(f"   → {X_frag.shape[1]} unique fragments")
 
-    train_and_eval_models(X_frag, y, OUT_ROOT)
-    print("\n✅  Pipeline complete – results saved in:", OUT_ROOT)
-
-if __name__ == "__main__":
-    main()
-
+    train_and_eval_models(X_frag, y, fragments)
+    print("\n✅  Pipeline complete – results saved in:", fragments)
 
 

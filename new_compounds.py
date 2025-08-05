@@ -22,46 +22,39 @@ from rdkit.Chem import (
 )
 from rdkit.ML.Descriptors.MoleculeDescriptors import MolecularDescriptorCalculator
 from mordred import Calculator, descriptors as md
+import yaml
 
-# ────────── CONFIG ──────────
-FRAG_SMI     = "results/Defragmentation_results/RandomForest/selected_fragments.smi"
-DESCR_FILE   = "results/Evaluation_qsar_model/selected_descriptors.csv"
-MODEL_FILE   = "results/Evaluation_qsar_model/rf.pkl"
-EXCLUDE_FILE = "data_sets/data/processed/final_dataset.bak"
-OUT_DIR      = Path("results/new_compounds"); OUT_DIR.mkdir(exist_ok=True)
-EXP_FRAG_CSV = OUT_DIR / "fragments_library.csv"
-HITS_TSV     = OUT_DIR / "top100_hits.tsv"
-GRID_PNG     = OUT_DIR / "first_10_hits.png"
-
-# GA hyperparameters
-N_ISLANDS      = 4
-POP_PER_ISLAND = 200
-GENERATIONS    = 300
-ELITE_KEEP     = 0.02
-MIGRATE_EPOCH  = 20
-P_CROSSOVER    = 0.9
-P_MUTATE_NODE  = 0.3
-P_SWAP_FRAG     = 0.1
-P_INFLATE       = 0.05
-P_DEFLATE       = 0.05
-P_ADD_FRAG     = 0.15
-P_REMOVE_FRAG  = 0.1
-MAX_FRAGS      = 8
-MIN_FRAGS      = 3
-
-# Fitness weights
-W_QSAR = 0.8
-W_QED  = 0.1
-W_NOV  = 0.1  # tanimoto diversity weight
-
-# Misc
-SEED       = 42
-QSAR_BATCH = 4096
-TOP_HITS   = 100
 
 RDLogger.DisableLog("rdApp.*")
 warnings.filterwarnings("ignore", message=".*Descriptors.*")
-rng_global = random.Random(SEED)
+
+# ── Only for static type checkers / IDEs ───────────────────────────────
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:                 # executes at *type-checking* time only
+    SEED: int
+    QSAR_BATCH: int
+    TOP_HITS: int
+    N_ISLANDS: int
+    POP_PER_ISLAND: int
+    GENERATIONS: int
+    ELITE_KEEP: float
+    MIGRATE_EPOCH: int
+    P_CROSSOVER: float
+    P_MUTATE_NODE: float
+    P_SWAP_FRAG: float
+    P_INFLATE: float
+    P_DEFLATE: float
+    P_ADD_FRAG: float
+    P_REMOVE_FRAG: float
+    MAX_FRAGS: int
+    MIN_FRAGS: int
+    W_QSAR: float
+    W_QED: float
+    W_NOV: float
+
+# will be initialised after the YAML is loaded
+rng_global: random.Random | None = None
+
 
 # ────────── DIVERSITY HELPERS ──────────
 @functools.lru_cache(maxsize=32768)
@@ -122,14 +115,43 @@ class QSARPredictor:
 
 GLOBAL_PREDICT: QSARPredictor|None = None
 
-def init_worker():
+def init_worker(descr_file: str,
+                model_file: str,
+                q_batch: int,
+                hyper: dict):
+    """
+    Runs once in every spawned process.
+    Sets batch size, loads model, and writes all GA hyper-parameters
+    into this worker's global namespace.
+    """
+    # -------- write hyper-params into globals -------------------------
+    for k, v in hyper.items():
+        globals()[k] = v                      # e.g. POP_PER_ISLAND, SEED …
+
+    # refresh RNG with this SEED
+    global rng_global, QSAR_BATCH
+    rng_global = random.Random(SEED)
+    QSAR_BATCH = q_batch
+
+    # -------- load model / descriptors --------------------------------
+    import joblib, pickle
+    cols = [r.strip()
+            for r in Path(descr_file).read_text().splitlines()
+            if r.strip()]
+    if cols and not cols[0].startswith(("EState", "MolLogP", "NumH", "TPSA")):
+        cols = cols[1:]
+
+    model = (joblib.load(model_file)
+             if os.path.exists(model_file)
+             else pickle.load(open(model_file, "rb")))
+
+    if hasattr(model, "set_params"):
+        model.set_params(n_jobs=1)
+
     global GLOBAL_PREDICT
-    import joblib,pickle
-    cols=[r.strip() for r in Path(DESCR_FILE).read_text().splitlines() if r.strip()]
-    if cols and not cols[0].startswith(('EState','MolLogP','NumH','TPSA')): cols=cols[1:]
-    model = joblib.load(MODEL_FILE) if os.path.exists(MODEL_FILE) else pickle.load(open(MODEL_FILE,'rb'))
-    if hasattr(model,'set_params'): model.set_params(n_jobs=1)
-    GLOBAL_PREDICT = QSARPredictor(model,cols)
+    GLOBAL_PREDICT = QSARPredictor(model, cols)
+
+
 
 # ────────── WILDCARD & BUILD OPS ──────────
 HYDROGEN_FRAGMENT = "[H][*]"
@@ -295,7 +317,64 @@ def load_exclude(path):
     return out
 
 # ───────────────────────────────────────────────────────────────
-def main():
+def run_genetic_island(cfg_or_path="config.yml"):
+    """
+    Prepare global variables, then run the original GA `main()`.
+
+    Accepts either a path to YAML or an already-loaded dict.
+    """
+    # ---- load config --------------------------------------------------
+    if isinstance(cfg_or_path, dict):
+        cfg = cfg_or_path
+    else:
+        with open(cfg_or_path) as fh:
+            cfg = yaml.safe_load(fh)
+
+    paths      = cfg["Paths"]
+    artifacts  = cfg["Artifacts"]
+    ga_cfg     = cfg["GeneticIsland"]
+
+    # ---- helper: respect absolute vs relative ------------------------
+    root_results = Path(paths["results_root"])
+    root_gi      = Path(paths["ga_results_root"])
+
+    def _rel_to_root(p, root=root_results):
+        p = Path(p)
+        return p if p.is_absolute() else root / p
+
+    # ---- re-assign all path-globals used by the GA -------------------
+    global FRAG_SMI, DESCR_FILE, MODEL_FILE, EXCLUDE_FILE
+    global OUT_DIR, EXP_FRAG_CSV, HITS_TSV, GRID_PNG
+
+    # --- build fragment path without double-prefixing -----------------
+    frag_dir = Path(paths["fragments"])  # e.g. 'results/Defragmentation_results'
+
+    # If frag_dir already *starts with* the same top-level 'results/',
+    # do NOT prepend results_root again.
+    if not frag_dir.is_absolute() and not frag_dir.parts[:1] == root_results.parts[:1]:
+        frag_dir = root_results / frag_dir
+
+    FRAG_SMI = str(frag_dir / ga_cfg["fragments_smi"])
+    DESCR_FILE   = str(_rel_to_root(artifacts["selected_descriptors"]))
+    MODEL_FILE   = str(_rel_to_root(artifacts["rf_pickle"]))
+    EXCLUDE_FILE = paths["final_path"]
+
+    OUT_DIR      = root_gi
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    EXP_FRAG_CSV = OUT_DIR / ga_cfg["export_frag_csv"]
+    HITS_TSV     = OUT_DIR / ga_cfg["top_hits_tsv"]
+    GRID_PNG     = OUT_DIR / ga_cfg["grid_png"]
+
+    # ---- hyper-parameters --------------------------------------------
+    for name, val in ga_cfg["hyperparameters"].items():
+        globals()[name] = val
+
+
+    global rng_global
+    rng_global = random.Random(SEED)
+
+
     if HITS_TSV.exists():
         print("⚡  top100_hits.tsv found – skipping GA evolution.")
         if not GRID_PNG.exists():
@@ -316,9 +395,17 @@ def main():
 
     mq   = mp.Manager().Queue()
     args = [(fragments, SEED + i, GENERATIONS, mq, exclude) for i in range(N_ISLANDS)]
-    with mp.Pool(N_ISLANDS, initializer=init_worker) as p:
-        results = p.starmap(run_island, args)
+    init_args = (DESCR_FILE,
+                 MODEL_FILE,
+                 QSAR_BATCH,
+                 ga_cfg["hyperparameters"])
 
+    with mp.Pool(
+            N_ISLANDS,
+            initializer=init_worker,
+            initargs=init_args  # <─ pass them
+    ) as p:
+        results = p.starmap(run_island, args)
 
     pop  = [ind for _, pop in results for ind in pop]
     pop.sort(key=lambda i: i.fitness, reverse=True)
@@ -347,11 +434,10 @@ def main():
     grid = Draw.MolsToGridImage(mols, molsPerRow=4, subImgSize=(250, 400))
     grid.save(str(GRID_PNG))
     print("✅  Grid saved →", GRID_PNG)
-# ───────────────────────────────────────────────────────────────
 
 
-if __name__=="__main__":
-    main()
+
+
 
 
 

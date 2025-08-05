@@ -10,6 +10,7 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.metrics import (silhouette_score, pairwise_distances,
                              roc_auc_score)
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
+import yaml
 
 
 rcParams.update({"figure.dpi": 300, "font.size": 14,
@@ -72,12 +73,25 @@ def prepare_Xy(csv_dataset: Path, csv_sel: Path):
 # 3.  Visuals
 # ───────────────────────────────────────
 def plsda_visual(Xs, y, out_dir: Path):
+    """
+    Build PLS-DA similarity plots and statistics.
+
+    Parameters
+    ----------
+    Xs : ndarray
+        Standard-scaled descriptor matrix.
+    y  : ndarray
+        Binary activity vector (0 = inactive, 1 = active).
+    out_dir : Path
+        Output directory for all artifacts.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # ── Train two-component PLS-DA model ───────────────────────────────
     pls = PLSRegression(n_components=2).fit(Xs, y)
     LV  = pls.x_scores_
 
-
+    # ── Quality metrics ────────────────────────────────────────────────
     sil   = silhouette_score(LV, y)
     D     = pairwise_distances(LV)
     intra = D[y[:, None] == y].mean()
@@ -87,55 +101,86 @@ def plsda_visual(Xs, y, out_dir: Path):
     y_pred = cross_val_predict(pls, Xs, y, cv=cv, method="predict").ravel()
     roc    = roc_auc_score(y, y_pred)
 
-
-    pd.DataFrame(LV, columns=["LV1", "LV2"]).to_csv(out_dir/"pls_scores.csv",
+    # ── Save raw scores & statistics ───────────────────────────────────
+    pd.DataFrame(LV, columns=["LV1", "LV2"]).to_csv(out_dir / "pls_scores.csv",
                                                     index=False)
-    with open(out_dir/"plsda_stats.txt", "w") as f:
+    with open(out_dir / "plsda_stats.txt", "w") as f:
         f.write(f"Silhouette           = {sil:.3f}\n")
-        f.write(f"Intra-class dist     = {intra:.3f}\n")
-        f.write(f"Inter-class dist     = {inter:.3f}\n")
+        f.write(f"Intra-class distance = {intra:.3f}\n")
+        f.write(f"Inter-class distance = {inter:.3f}\n")
         f.write(f"ROC-AUC (5-fold CV)  = {roc:.3f}\n")
 
+    # ── Scatter plot of LV1 vs LV2 ─────────────────────────────────────
+    cmap   = {0: "#1f77b4", 1: "#d62728"}
+    labels = {0: "inactive", 1: "active"}
 
-    cmap   = {0:"#1f77b4", 1:"#d62728"}
-    labels = {0:"inactive", 1:"active"}
-    plt.figure(figsize=(6,5))
-    for cls in [0,1]:
+    plt.figure(figsize=(6, 5))
+    for cls in [0, 1]:
         m = y == cls
-        plt.scatter(LV[m,0], LV[m,1], s=28, alpha=.8,
+        plt.scatter(LV[m, 0], LV[m, 1], s=28, alpha=.8,
                     label=labels[cls], color=cmap[cls])
-    plt.xlabel("Latent Variable 1"); plt.ylabel("Latent Variable 2")
+    plt.xlabel("Latent Variable 1")
+    plt.ylabel("Latent Variable 2")
     plt.title(f"PLS-DA   (silhouette = {sil:.2f})")
     plt.legend(frameon=False)
-    plt.tight_layout(); plt.savefig(out_dir/"plsda_scatter.png"); plt.close()
+    plt.tight_layout()
+    plt.savefig(out_dir / "plsda_scatter.png")
+    plt.close()
 
-    # ------------- violin --------------
-    plt.figure(figsize=(6,4))
-    parts = plt.violinplot([LV[y==0,0], LV[y==1,0],
-                            LV[y==0,1], LV[y==1,1]],
+    # ── Violin plots for score distributions ───────────────────────────
+    plt.figure(figsize=(6, 4))
+    parts = plt.violinplot([LV[y == 0, 0], LV[y == 1, 0],
+                            LV[y == 0, 1], LV[y == 1, 1]],
                            showmeans=True, widths=.8)
-    for pc, col in zip(parts['bodies'], [cmap[0], cmap[1], cmap[0], cmap[1]]):
-        pc.set_facecolor(col); pc.set_alpha(0.6)
-    plt.xticks([1,2,3,4], ["LV1 inactive", "LV1 active",
-                           "LV2 inactive", "LV2 active"], rotation=20)
+    for pc, col in zip(parts["bodies"],
+                       [cmap[0], cmap[1], cmap[0], cmap[1]]):
+        pc.set_facecolor(col)
+        pc.set_alpha(0.6)
+    plt.xticks([1, 2, 3, 4],
+               ["LV1 inactive", "LV1 active",
+                "LV2 inactive", "LV2 active"],
+               rotation=20)
     plt.ylabel("Score value")
-    plt.title("Rozkłady LV1 / LV2")
-    plt.tight_layout(); plt.savefig(out_dir/"plsda_violin.png"); plt.close()
+    plt.title("Distributions of LV1 / LV2")
+    plt.tight_layout()
+    plt.savefig(out_dir / "plsda_violin.png")
+    plt.close()
 
-    print("✅  wszystkie pliki w:", out_dir.resolve())
+    print("✅  All files saved in:", out_dir.resolve())
+
 
 # ───────────────────────────────────────
 # 4.  MAIN
 # ───────────────────────────────────────
-if __name__ == "__main__":
-    CSV_DATA = Path("data_sets/data/processed/final_dataset.csv")
+def run_plsda_visuals(cfg_or_path="config.yml"):
+    """
+    Build PLS-DA similarity visuals.
+    Accepts either a config-dict or a path to the YAML file.
+    """
 
-    CSV_SEL  = Path("results/Evaluation_qsar_model/selected_descriptors.csv")
+    # -------- configuration -------------------------------------------
+    if isinstance(cfg_or_path, dict):
+        cfg = cfg_or_path
+    else:
+        with open(cfg_or_path) as fh:
+            cfg = yaml.safe_load(fh)
 
-    OUT_DIR = Path("Similarity_visuals")
+    paths      = cfg["Paths"]
+    artifacts  = cfg["Artifacts"]
 
-    Xs, y = prepare_Xy(CSV_DATA, CSV_SEL)
-    plsda_visual(Xs, y, OUT_DIR)
+    # helper: absolute path stays absolute; otherwise prepend results_root
+    root = Path(paths["results_root"])
+    def _p(item):
+        p = Path(artifacts[item])
+        return p if p.is_absolute() else root / p
+
+    csv_data = Path(paths["final_path"])
+    csv_sel  = _p("selected_descriptors")
+    out_dir  = Path(paths["visuals_root"])
+
+    # -------- run analysis --------------------------------------------
+    Xs, y = prepare_Xy(csv_data, csv_sel)
+    plsda_visual(Xs, y, out_dir)
 
 
 

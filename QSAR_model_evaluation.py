@@ -25,6 +25,7 @@ from boruta import BorutaPy
 import shap, joblib, matplotlib.pyplot as plt
 from matplotlib import rcParams, cm
 import pickle
+import yaml
 
 # ────────────────────────────────── SETUP ───────────────────────────────────
 rcParams.update({
@@ -40,38 +41,7 @@ except ModuleNotFoundError:
     BRF = RandomForestClassifier
     print('⚠️ imblearn not found – using RandomForestClassifier')
 
-# ╭────────── CACHE & PATHS ──────────────╮
-OUT          = Path("results/Evaluation_qsar_model")
-PLOTS_DIR    = OUT / "plots"
-METRICS_DIR  = OUT / "model_metrics"
 
-
-PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-METRICS_DIR.mkdir(parents=True, exist_ok=True)
-
-SEED        = 42
-
-# descriptors & model artefacts
-DESC_PKL    = OUT / "X_full.pkl"
-SEL_CSV     = OUT / "selected_descriptors.csv"
-MODEL_PKL   = OUT / "rf_model.joblib"
-
-
-SHAP_BAR    = PLOTS_DIR / "shap_bar_plot.png"
-SHAP_BEESWARM= PLOTS_DIR / "shap_beeswarm_plot.png"
-ROC_PNG     = PLOTS_DIR / "roc.png"
-PR_PNG      = PLOTS_DIR / "pr.png"
-CAL_PNG     = PLOTS_DIR / "calibration.png"
-REL_PNG     = PLOTS_DIR / "reliability.png"
-HIST_PNG    = PLOTS_DIR / "proba_hist.png"
-CM_PNG      = PLOTS_DIR / "confusion_matrix.png"
-SUM_PNG     = PLOTS_DIR / "metrics_summary.png"
-
-
-BOOT_TXT    = METRICS_DIR / "bootstrap_stats.txt"
-Y_TXT       = METRICS_DIR / "y_scramble.txt"
-CV_TXT      = METRICS_DIR / "cv_auc.txt"
-# ╰──────────────────────────────────────────╯
 
 
 def _exists(*paths: Path) -> bool:
@@ -339,62 +309,136 @@ def summary_figure(metrics: dict, out: Path):
 # ╰──────────────────────────────────────────╯
 
 # ╭──────────────── MAIN ───────────────────────────╮
-def main():
-    CSV_PATH = "data_sets/data/processed/final_dataset.csv"
-    df = load_dataset(CSV_PATH)
-    smiles, y = df.canonical_smiles.tolist(), df.y.values
-    X_full = compute_descriptors(smiles)
-    tr, te, _ = custom_split(smiles, y, seed=SEED)
+def build_qsar_model(cfg_path: str = "config.yaml"):
+    # ╭─ Load configuration ─────────────────────────────────────────────╮
+    with open(cfg_path) as fh:
+        cfg = yaml.safe_load(fh)
+
+    # ╭─ Global parameters coming from the config ───────────────────────╮
+    global SEED, OUT, PLOTS_DIR, METRICS_DIR
+    global DESC_PKL, SEL_CSV, MODEL_PKL, RF_PKL
+    global SHAP_BAR, SHAP_BEESWARM, ROC_PNG, PR_PNG, CAL_PNG, REL_PNG
+    global HIST_PNG, CM_PNG, SUM_PNG
+    global BOOT_TXT, Y_TXT, CV_TXT
+
+    SEED = cfg["General"].get("SEED", 42)
+
+    # root directory for all artefacts
+    OUT = Path(cfg["Paths"]["results_root"])
+    PLOTS_DIR   = OUT / "plots"
+    METRICS_DIR = OUT / "model_metrics"
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    METRICS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # artefact file names – can be changed in the config
+    art = cfg["Artifacts"]
+    DESC_PKL  = OUT / art["X_full"]
+    SEL_CSV   = OUT / art["selected_descriptors"]
+    MODEL_PKL = OUT / art["rf_model"]
+    RF_PKL = OUT / art["rf_pickle"]
+
+    SHAP_BAR      = PLOTS_DIR / art["shap_bar_plot"]
+    SHAP_BEESWARM = PLOTS_DIR / art["shap_beeswarm_plot"]
+    ROC_PNG       = PLOTS_DIR / art["roc_plot"]
+    PR_PNG        = PLOTS_DIR / art["pr_plot"]
+    CAL_PNG       = PLOTS_DIR / art["calibration_plot"]
+    REL_PNG       = PLOTS_DIR / art["reliability_plot"]
+    HIST_PNG      = PLOTS_DIR / art["proba_hist_plot"]
+    CM_PNG        = PLOTS_DIR / art["confusion_matrix_plot"]
+    SUM_PNG       = PLOTS_DIR / art["metrics_summary_plot"]
+
+    BOOT_TXT = METRICS_DIR / art["bootstrap_stats"]
+    Y_TXT    = METRICS_DIR / art["y_scramble_stats"]
+    CV_TXT   = METRICS_DIR / art["cv_auc"]
+
+    # ╭─ Input dataset produced by earlier ETL steps ─────────────────────╮
+    CSV_PATH = cfg["Paths"]["final_path"]
+
+    # ╭─ Data & descriptors ──────────────────────────────────────────────╮
+    df      = load_dataset(CSV_PATH)
+    smiles  = df.canonical_smiles.tolist()
+    y       = df.y.values
+    X_full  = compute_descriptors(smiles)
+
+    # ╭─ Custom split (all thresholds come from the config) ──────────────╮
+    split_cfg = cfg["Split"]
+    tr, te, _ = custom_split(
+        smiles, y,
+        frac        = split_cfg["test_fraction"],
+        max_cliff   = split_cfg["max_cliff"],
+        min_cluster = split_cfg["min_cluster"],
+        min_dissim  = split_cfg["min_dissim"],
+        seed        = SEED,
+    )
+
+    # ╭─ Boruta feature selection (seed only) ────────────────────────────╮
     sel = boruta_select(X_full.iloc[tr], y[tr], SEED)
+
     X_tr = X_full.loc[tr, sel].fillna(X_full.loc[tr, sel].median()).values
     X_te = X_full.loc[te, sel].fillna(X_full.loc[tr, sel].median()).values
 
-    # Model caching / training
+    # ╭─ Balanced/Random Forest – number of trees from the config ────────╮
+    rf_cfg_n = cfg["RandomForest"]["n_estimators"]
+    def make_rf_cfg(seed=SEED):
+        return BRF(
+            n_estimators=rf_cfg_n,
+            class_weight="balanced",
+            random_state=seed,
+            n_jobs=-1,
+        )
+    # keep the original factory name unchanged
+    global make_rf
+    make_rf = make_rf_cfg
+
+    # — train or load the model
     if MODEL_PKL.exists():
         rf = joblib.load(MODEL_PKL)
     else:
         rf = make_rf(SEED)
         rf.fit(X_tr, y[tr])
         joblib.dump(rf, MODEL_PKL)
-        with open(OUT / "rf.pkl", "wb") as fh:
+        with open(RF_PKL, "wb") as fh:
             pickle.dump(rf, fh)
 
-
-    # SHAP & validation plots
+    # ╭─ Explainability & validation plots ───────────────────────────────╮
     safe_shap(rf, pd.DataFrame(X_tr, columns=sel), OUT)
     plots_val(rf, X_te, y[te], OUT)
 
-    # Bootstrap ROC‑AUC
+    # ╭─ Bootstrap ROC-AUC ───────────────────────────────────────────────╮
     if BOOT_TXT.exists():
         roc_med, roc_lo, roc_hi = np.loadtxt(BOOT_TXT)
     else:
         roc_med, roc_lo, roc_hi = bootstrap_auc(rf, X_te, y[te])
-        np.savetxt(BOOT_TXT, [roc_med, roc_lo, roc_hi], fmt='%.6f')
+        np.savetxt(BOOT_TXT, [roc_med, roc_lo, roc_hi], fmt="%.6f")
 
-    # Y‑scramble
+    # ╭─ Y-scramble ───────────────────────────────────────────────────────╮
     if Y_TXT.exists():
         ys_mean, ys_std = np.loadtxt(Y_TXT)
     else:
         ys_mean, ys_std = y_scramble(lambda: make_rf(SEED), X_tr, y[tr], n=30)
-        np.savetxt(Y_TXT, [ys_mean, ys_std], fmt='%.6f')
+        np.savetxt(Y_TXT, [ys_mean, ys_std], fmt="%.6f")
 
-    # Beautiful plots: confusion matrix + summary
+    # ╭─ Confusion-matrix & summary figure ───────────────────────────────╮
     plot_confusion_matrix_pastel(rf, X_te, y[te], CM_PNG)
-    pr = average_precision_score(y[te], rf.predict_proba(X_te)[:,1])
-    acc = accuracy_score(y[te], rf.predict_proba(X_te)[:,1] > 0.5)
-    summary_figure({
-        'roc_med': roc_med,
-        'roc_lo': roc_lo,
-        'roc_hi': roc_hi,
-        'pr': pr,
-        'acc': acc,
-        'ys_mean': ys_mean,
-        'ys_std': ys_std
-    }, SUM_PNG)
+    pr  = average_precision_score(y[te], rf.predict_proba(X_te)[:, 1])
+    acc = accuracy_score(y[te], rf.predict_proba(X_te)[:, 1] > 0.5)
+    summary_figure(
+        {
+            "roc_med": roc_med,
+            "roc_lo":  roc_lo,
+            "roc_hi":  roc_hi,
+            "pr":      pr,
+            "acc":     acc,
+            "ys_mean": ys_mean,
+            "ys_std":  ys_std,
+        },
+        SUM_PNG,
+    )
 
-    # Terminal output
+    # ╭─ Console output ──────────────────────────────────────────────────╮
     print(f"Bootstrap ROC-AUC {roc_med:.3f} [ {roc_lo:.3f} ; {roc_hi:.3f} ]")
-    print(f"Y-scramble AUC {ys_mean:.3f} ± {ys_std:.3f}")
+    print(f"Y-scramble AUC     {ys_mean:.3f} ± {ys_std:.3f}")
+
     if CV_TXT.exists():
         cv = np.loadtxt(CV_TXT)
     else:
@@ -402,15 +446,22 @@ def main():
             make_rf(SEED),
             X_full[sel].values,
             y,
-            cv=RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=SEED),
-            scoring='roc_auc',
-            n_jobs=-1
+            cv=RepeatedStratifiedKFold(
+                n_splits=5, n_repeats=10, random_state=SEED
+            ),
+            scoring="roc_auc",
+            n_jobs=-1,
         )
-        np.savetxt(CV_TXT, cv, fmt='%.6f')
-    print(f"CV AUC median={np.median(cv):.3f} (min={cv.min():.3f} max={cv.max():.3f})")
+        np.savetxt(CV_TXT, cv, fmt="%.6f")
 
-if __name__ == '__main__':
-    main()
+    print(
+        f"CV AUC median={np.median(cv):.3f} "
+        f"(min={cv.min():.3f} max={cv.max():.3f})"
+    )
+
+
+
+
 
 
 

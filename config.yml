@@ -1,0 +1,89 @@
+# Custom your Chemical Space and biological target
+REBUILD_DATASET: false
+TARGET_ID: "CHEMBL392"    # A549 cancer cell line
+PAGE_LIMIT: 1000
+THRESHOLD_NM: 10000
+
+# General settings
+General:
+  SEED: 42  # random seed for reproducibility
+
+# Parameters for the custom_split routine
+Split:
+  test_fraction: 0.20        # fraction of the dataset used as the external test set
+  max_cliff:    0.15         # maximum fraction of activity cliffs allowed in the test set
+  min_cluster:  0.30         # minimum fraction of clustered compounds in the test set
+  min_dissim:   0.20         # minimum fraction of dissimilar compounds in the test set
+
+# RandomForest / BalancedRandomForest parameters
+RandomForest:
+  n_estimators: 1200         # number of trees in the ensemble
+
+Paths:
+  target_path:        "data/all_target_compounds/A549_activities.csv"            # all compounds from ChEMBL with registered IC50 value against the chosen target
+  chemical_space_path: "data/chemical_space/specific_compounds.csv"              # compounds from public repositories with a common chemical pattern (representing the Chemical Domain)
+  own_resources_path: "data/own_resources_compounds/my_compounds.csv"            # add unpublished compounds from your lab
+  merged_path:        "data/merged/merged.csv"
+  final_path:         "data/processed/final_dataset.csv"                         # final dataset used for modelling
+  results_root:       "results/Evaluation_qsar_model"                            # root directory for all output artefacts
+  fragments:          "results/Defragmentation_results"
+  visuals_root:       "results/Similarity_visuals"                               # root directory for active/inactive cluster analysis
+  ga_results_root:    "results/GeneticIsland"                                    # root for Genetic Algorythm artefacts
+
+
+# File names for cached artefacts – they will be created inside Paths.results_root
+Artifacts:
+  X_full:                 "X_full.pkl"                 # cached full descriptor matrix
+  selected_descriptors:   "selected_descriptors.csv"   # list of Boruta-selected descriptors
+  rf_model:               "rf_model.joblib"            # trained Random Forest model
+  rf_pickle:              "rf.pkl"
+
+  shap_bar_plot:          "shap_bar_plot.png"          # SHAP bar chart
+  shap_beeswarm_plot:     "shap_beeswarm_plot.png"     # SHAP beeswarm plot
+  roc_plot:               "roc.png"                    # ROC curve
+  pr_plot:                "pr.png"                     # precision–recall curve
+  calibration_plot:       "calibration.png"            # calibration curve
+  reliability_plot:       "reliability.png"            # reliability curve
+  proba_hist_plot:        "proba_hist.png"             # probability histogram
+  confusion_matrix_plot:  "confusion_matrix.png"       # pastel confusion matrix
+  metrics_summary_plot:   "metrics_summary.png"        # performance summary table
+
+  bootstrap_stats:        "bootstrap_stats.txt"        # bootstrap ROC-AUC statistics
+  y_scramble_stats:       "y_scramble.txt"             # y-scramble ROC-AUC statistics
+  cv_auc:                 "cv_auc.txt"                 # cross-validation AUC values
+
+  pls_scores:             "pls_scores.csv"             # scores of LV1 and LV2
+  plsda_stats:            "plsda_stats.txt"            # silhouette, distances, ROC-AUC
+  plsda_scatter:          "plsda_scatter.png"          # LV1/LV2 scatter plot
+  plsda_violin:           "plsda_violin.png"           # violin plot of LV distributions
+
+
+GeneticIsland:
+  fragments_smi:      "RandomForest/selected_fragments.smi"
+  export_frag_csv:    "fragments_library.csv"
+  top_hits_tsv:       "top100_hits.tsv"
+  grid_png:           "first_10_hits.png"
+
+  hyperparameters:
+    N_ISLANDS:       4
+    POP_PER_ISLAND:  200
+    GENERATIONS:     300
+    ELITE_KEEP:      0.02
+    MIGRATE_EPOCH:   20
+    P_CROSSOVER:     0.9
+    P_MUTATE_NODE:   0.3
+    P_SWAP_FRAG:     0.1
+    P_INFLATE:       0.05
+    P_DEFLATE:       0.05
+    P_ADD_FRAG:      0.15
+    P_REMOVE_FRAG:   0.1
+    MAX_FRAGS:       8
+    MIN_FRAGS:       3
+    W_QSAR:          0.8
+    W_QED:           0.1
+    W_NOV:           0.1
+    SEED:            42
+    QSAR_BATCH:      4096
+    TOP_HITS:        100
+
+
