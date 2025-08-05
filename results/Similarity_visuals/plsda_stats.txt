@@ -1,0 +1,4 @@
+Silhouette           = 0.326
+Intra-class distance = 4.054
+Inter-class distance = 6.981
+ROC-AUC (5-fold CV)  = 0.887
