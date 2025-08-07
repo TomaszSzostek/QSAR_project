@@ -2,7 +2,7 @@
 REBUILD_DATASET: false
 TARGET_ID: "CHEMBL392"    # A549 cancer cell line
 PAGE_LIMIT: 1000
-THRESHOLD_NM: 10000
+THRESHOLD_NM: 10000       # IC50 threshold
 
 # General settings
 General:
